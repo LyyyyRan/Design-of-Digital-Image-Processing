@@ -23,6 +23,7 @@ warnings.filterwarnings("ignore")
 class Ui_MainWindow(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)  # 父类的构造函数
+        # super(Ui_MainWindow, self).__init__(self)
 
         self.timer_camera = QtCore.QTimer()  # 定义定时器，用于控制显示视频的帧率
         self.cap = cv2.VideoCapture()

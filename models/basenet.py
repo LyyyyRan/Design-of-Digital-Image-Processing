@@ -17,6 +17,7 @@ class ConvBlock(nn.Module):
         self.bn = nn.BatchNorm2d(oup)
         if not linear:
             self.prelu = nn.PReLU(oup)
+
     def forward(self, x):
         x = self.conv(x)
         x = self.bn(x)
@@ -24,12 +25,13 @@ class ConvBlock(nn.Module):
             return x
         else:
             return self.prelu(x)
-            
+
 
 # SE module
 # https://github.com/wujiyang/Face_Pytorch/blob/master/backbone/cbam.py
 class SEModule(nn.Module):
     '''Squeeze and Excitation Module'''
+
     def __init__(self, channels, reduction):
         super(SEModule, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
@@ -47,50 +49,57 @@ class SEModule(nn.Module):
         x = self.sigmoid(x)
 
         return input * x
-        
+
+
 # USE global depthwise convolution layer. Compatible with MobileNetV2 (224×224), MobileNetV2_ExternalData (224×224)
 class MobileNet_GDConv(nn.Module):
-    def __init__(self,num_classes):
-        super(MobileNet_GDConv,self).__init__()
+    def __init__(self, num_classes):
+        super(MobileNet_GDConv, self).__init__()
         self.pretrain_net = models.mobilenet_v2(pretrained=False)
         self.base_net = nn.Sequential(*list(self.pretrain_net.children())[:-1])
         self.linear7 = ConvBlock(1280, 1280, (7, 7), 1, 0, dw=True, linear=True)
         self.linear1 = ConvBlock(1280, num_classes, 1, 1, 0, linear=True)
-    def forward(self,x):
+
+    def forward(self, x):
         x = self.base_net(x)
         x = self.linear7(x)
         x = self.linear1(x)
         x = x.view(x.size(0), -1)
         return x
 
+
 # USE global depthwise convolution layer. Compatible with MobileNetV2 (56×56)
 class MobileNet_GDConv_56(nn.Module):
-    def __init__(self,num_classes):
-        super(MobileNet_GDConv_56,self).__init__()
+    def __init__(self, num_classes):
+        super(MobileNet_GDConv_56, self).__init__()
         self.pretrain_net = models.mobilenet_v2(pretrained=False)
         self.base_net = nn.Sequential(*list(self.pretrain_net.children())[:-1])
         self.linear7 = ConvBlock(1280, 1280, (2, 2), 1, 0, dw=True, linear=True)
         self.linear1 = ConvBlock(1280, num_classes, 1, 1, 0, linear=True)
-    def forward(self,x):
+
+    def forward(self, x):
         x = self.base_net(x)
         x = self.linear7(x)
         x = self.linear1(x)
         x = x.view(x.size(0), -1)
-        return x        
+        return x
 
- # MobileNetV2 with SE; Compatible with MobileNetV2_SE (224×224) and MobileNetV2_SE_RE (224×224)     
+        # MobileNetV2 with SE; Compatible with MobileNetV2_SE (224×224) and MobileNetV2_SE_RE (224×224)
+
+
 class MobileNet_GDConv_SE(nn.Module):
-    def __init__(self,num_classes):
-        super(MobileNet_GDConv_SE,self).__init__()
+    def __init__(self, num_classes):
+        super(MobileNet_GDConv_SE, self).__init__()
         self.pretrain_net = models.mobilenet_v2(pretrained=True)
         self.base_net = nn.Sequential(*list(self.pretrain_net.children())[:-1])
-        self.linear7 = ConvBlock(1280, 1280, (7, 7), 1, 0, dw=True, linear=True) 
+        self.linear7 = ConvBlock(1280, 1280, (7, 7), 1, 0, dw=True, linear=True)
         self.linear1 = ConvBlock(1280, num_classes, 1, 1, 0, linear=True)
-        self.attention=SEModule(1280,8)
-    def forward(self,x):
+        self.attention = SEModule(1280, 8)
+
+    def forward(self, x):
         x = self.base_net(x)
         x = self.attention(x)
         x = self.linear7(x)
         x = self.linear1(x)
         x = x.view(x.size(0), -1)
-        return x       
+        return x

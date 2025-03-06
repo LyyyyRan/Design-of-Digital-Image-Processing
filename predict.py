@@ -13,11 +13,17 @@ from models.basenet import MobileNet_GDConv
 
 
 def load_model(cfg):
-    model = MobileNet_GDConv(136)  # MobileNet
+    # MobileNet:
+    model = MobileNet_GDConv(136)
     model = torch.nn.DataParallel(model)
+
+    # load pretrained model:
     checkpoint = torch.load('./checkpoint/weights/mobilenet.pth.tar', map_location=cfg.device)
     model.load_state_dict(checkpoint['state_dict'])
+
+    # set mode to be eval
     model = model.eval()
+
     return model
 
 
@@ -62,46 +68,57 @@ def scale_coords_landmarks(img1_shape, coords, img0_shape, ratio_pad=None):
 def detect(cfg, model, img0):
     stride = int(model.stride.max())  # model stride
     imgsz = 640
-    if imgsz <= 0:  # original size
+
+    # original size
+    if imgsz <= 0:
         imgsz = dynamic_resize(img0.shape)
+
     imgsz = check_img_size(imgsz, s=64)  # check img_size
     img = letterbox(img0, imgsz)[0]
+
     # Convert
     img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
     img = np.ascontiguousarray(img)
     img = torch.from_numpy(img).to(cfg.device)
     img = img.float()  # uint8 to fp16/32
     img /= 255.0  # 0 - 255 to 0.0 - 1.0
+
+    # TensorShape must to be (b, c, h, w):
     if img.ndimension() == 3:
         img = img.unsqueeze(0)
-    # Inference
+
+    # YOLO forward:
     pred = model(img, augment=cfg.augment)[0]
 
-    # Apply NMS
+    # Apply NMS:
     pred = non_max_suppression_face(pred, cfg.conf_thres, cfg.iou_thres)[0]  # [n,16],n is number people
+
     gn = torch.tensor(img0.shape)[[1, 0, 1, 0]].to(cfg.device)  # normalization gain whwh
     gn_lks = torch.tensor(img0.shape)[[1, 0, 1, 0, 1, 0, 1, 0, 1, 0]].to(cfg.device)  # normalization gain landmarks
     boxes = []
     h, w, c = img0.shape
+
     if pred is not None:
         pred[:, :4] = scale_coords(img.shape[2:], pred[:, :4], img0.shape).round()
         pred[:, 5:15] = scale_coords_landmarks(img.shape[2:], pred[:, 5:15], img0.shape).round()
+
         for j in range(pred.size()[0]):
             xywh = (xyxy2xywh(pred[j, :4].view(1, 4)) / gn).view(-1)
             xywh = xywh.data.cpu().numpy()
             conf = pred[j, 4].cpu().numpy()
             landmarks = (pred[j, 5:15].view(1, 10) / gn_lks).view(-1).tolist()
-            class_num = pred[j, 15].cpu().numpy()
+            class_num = pred[j, 15].cpu().numpy()  # only one category: face
             x1 = int(xywh[0] * w - 0.5 * xywh[2] * w)
             y1 = int(xywh[1] * h - 0.5 * xywh[3] * h)
             x2 = int(xywh[0] * w + 0.5 * xywh[2] * w)
             y2 = int(xywh[1] * h + 0.5 * xywh[3] * h)
             boxes.append([x1, y1, x2 - x1, y2 - y1, conf])
+
     return boxes
 
 
 def mouth_aspect_ratio(mouth):
-    # 垂直点位
+    # 垂直点位:
     A = np.linalg.norm(mouth[2] - mouth[9])
     B = np.linalg.norm(mouth[4] - mouth[7])
     C = np.linalg.norm(mouth[0] - mouth[6])
@@ -134,12 +151,21 @@ class Pipeline(nn.Module):
         height, width, _ = img.shape
         with torch.no_grad():
             start1 = time.time()
+
+            # YOLO fordward:
             faces = detect(self.cfg, self.model_det, img)  # [[x1, y1, x2-x1, y2-y1, array(score, dtype=float32)],[...]]
+
             end1 = time.time()
+
             faces_data = []
-            if len(faces) == 0: return faces_data
+
+            if len(faces) == 0:
+                return faces_data
+
             for k, face in enumerate(faces):
-                if face[4] < self.cfg.DET_THRESH: continue
+                if face[4] < self.cfg.DET_THRESH:
+                    continue
+
                 x1 = face[0]
                 y1 = face[1]
                 w = face[2]
@@ -164,21 +190,26 @@ class Pipeline(nn.Module):
                 y2 = min(height, y2)
                 new_bbox = list(map(int, [x1, x2, y1, y2]))
                 new_bbox = BBox(new_bbox)
-                cropped = img[new_bbox.top:new_bbox.bottom, new_bbox.left:new_bbox.right]
+                cropped = img[new_bbox.top:new_bbox.bottom, new_bbox.left:new_bbox.right]  # ROIs
+
                 if (dx > 0 or dy > 0 or edx > 0 or edy > 0):
                     cropped = cv2.copyMakeBorder(cropped, int(dy), int(edy), int(dx), int(edx), cv2.BORDER_CONSTANT, 0)
+
                 cropped_face = cv2.resize(cropped, (self.cfg.out_size, self.cfg.out_size))
 
                 if cropped_face.shape[0] <= 0 or cropped_face.shape[1] <= 0:
                     continue
+
                 test_face = cropped_face.copy()
-                test_face = test_face / 255.0
-                test_face = (test_face - self.cfg.mean) / self.cfg.std
-                test_face = test_face.transpose((2, 0, 1))
-                test_face = test_face.reshape((1,) + test_face.shape)
-                input = torch.from_numpy(test_face).float()
+                test_face = test_face / 255.0  # Normalize
+                test_face = (test_face - self.cfg.mean) / self.cfg.std  # Standardize
+                test_face = test_face.transpose((2, 0, 1))  # Channel dimension
+                test_face = test_face.reshape((1,) + test_face.shape)  # unsqueeze(0): CHW2BCHW
+
+                input = torch.from_numpy(test_face).float()  # ToTensor && set dtype to be float32
                 input = torch.autograd.Variable(input)
 
+                # MobileNet forward:
                 start2 = time.time()
                 landmark = self.model(input).cpu().data.numpy()
                 end2 = time.time()
