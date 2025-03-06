@@ -1,7 +1,7 @@
 # Design-of-Digital-Image-Processing
 
 # 简介
-    An project based on YOLOv5-WiderFace &amp;&amp; MobileNetV3 for course design.
+    An project based on YOLOv5-WiderFace && MobileNetV3 for course design.
 
 # 环境依赖
     1) Request python3
