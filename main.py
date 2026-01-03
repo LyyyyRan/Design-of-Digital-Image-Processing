@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Fri Oct  12 12:55:22 2023
+Created on Oct  12 2023
 
 @author: https://github.com/LyyyyRan
 """
